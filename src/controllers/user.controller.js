@@ -239,128 +239,235 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
 
 //Method for changeing
 const changeCurrentPassword = asyncHandler(async (req, res) => {
-  const {oldPassword, newPassword} = req.body;
+  const { oldPassword, newPassword } = req.body;
   const user = await User.findById(req.user?._id);
   const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
   //if given old password is wrong
-  if(!isPasswordCorrect){
+  if (!isPasswordCorrect) {
     throw new ApiError(400, "Invalid Old Password");
   }
   //if given old password is right
   user.password = newPassword;
-  await user.save({validateBeforeSave: false});
+  await user.save({ validateBeforeSave: false });
   return res
-  .status(200)
-  .json(new ApiResponse(200, {}, "Password Changed Successfully"));
+    .status(200)
+    .json(new ApiResponse(200, {}, "Password Changed Successfully"));
 });
 
 //current User
-const getCurrentUser = asyncHandler(async(req, res)=>{
+const getCurrentUser = asyncHandler(async (req, res) => {
   return res
-  .status(200)
-  .json(new ApiResponse(200,req.user,"User fetched successfully"))
-})
+    .status(200)
+    .json(new ApiResponse(200, req.user, "User fetched successfully"));
+});
 
 //update account details
-const updateAccountDetails = asyncHandler(async(req, res)=>{
-  const {fullName, email} = req.body;
+const updateAccountDetails = asyncHandler(async (req, res) => {
+  const { fullName, email } = req.body;
 
   // if fullname and email both are not present
-  if(!fullName || !email){
+  if (!fullName || !email) {
     throw new ApiError(400, "All fields are required");
   }
 
   const user = await User.findByIdAndUpdate(
     req.user?._id,
     {
-      $set:{
+      $set: {
         fullName,
-        email
-      }
+        email,
+      },
     },
-    {new: true}  // means after update the information will be returned
-  ).select ("-password")
+    { new: true } // means after update the information will be returned
+  ).select("-password");
 
   return res
-  .status(200)
-  .json(new ApiResponse(200, user, "Account details updated successfully"));
+    .status(200)
+    .json(new ApiResponse(200, user, "Account details updated successfully"));
 });
 
 // update Avatar
-const updateUserAvatar = asyncHandler(async(req, res)=>{
+const updateUserAvatar = asyncHandler(async (req, res) => {
   const avatarLocalPath = req.file?.path;
 
   //if avatar file path does not exists
-  if(!avatarLocalPath){
+  if (!avatarLocalPath) {
     throw new ApiError(400, "Avatar file is missing");
   }
 
   //if avatar file exists
   const avatar = await uploadOnCloudinary(avatarLocalPath);
 
-  if(!avatar.url){
+  if (!avatar.url) {
     throw new ApiError(400, "Error while uploading on Avatar");
   }
 
   const user = await User.findByIdAndUpdate(
     req.user?._id,
     {
-      $set:{
-        avatar: avatar.url
-      }
+      $set: {
+        avatar: avatar.url,
+      },
     },
-    {new: true}
-  ).select("-password")
+    { new: true }
+  ).select("-password");
 
   return res
-  .status(200)
-  .json(new ApiResponse(200, user, "Avatar updated successfully"));
-})
+    .status(200)
+    .json(new ApiResponse(200, user, "Avatar updated successfully"));
+});
 
 //update cover image
-const updateUserCoverImage = asyncHandler(async(req, res)=>{
+const updateUserCoverImage = asyncHandler(async (req, res) => {
   const coverImageLocalPath = req.file?.path;
 
   //if avatar file path does not exists
-  if(!coverImageLocalPath){
+  if (!coverImageLocalPath) {
     throw new ApiError(400, "Cover image file is missing");
   }
 
   //if avatar file exists
   const coverImage = await uploadOnCloudinary(coverImageLocalPath);
 
-  if(!coverImage.url){
+  if (!coverImage.url) {
     throw new ApiError(400, "Error while uploading on Avatar");
   }
 
   const user = await User.findByIdAndUpdate(
     req.user?._id,
     {
-      $set:{
-        coverImage: coverImage.url
-      }
+      $set: {
+        coverImage: coverImage.url,
+      },
     },
-    {new: true}
-  ).select("-password")
+    { new: true }
+  ).select("-password");
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "Cover image updated successfully"));
+});
+
+//user channel profile
+const getUserChannelProfile = asyncHandler(async (req, res) => {
+  const { username } = req.params; // destructure userbname from params
+  //if username does not exists
+  if (!username?.trim) {
+    throw new ApiError(400, "username is missing");
+  }
+
+  const channel = await User.aggregate([
+    {
+      $match: {
+        username: username?.toLowerCase(),
+      },
+    },
+    {
+      $lookup: {
+        from: "subsciptions",
+        localField: "_id",
+        foreignField: "channel",
+        as: "subscribers",
+      },
+    },
+    {
+      $lookup: {
+        from: "subsciptions",
+        localField: "_id",
+        foreignField: "subscriber",
+        as: "subscribedTo",
+      },
+    },
+    {
+      $addFields: {
+        subscribersCount: {
+          $size: "$subscribers",
+        },
+        channelsSubscribedToCount: {
+          $size: "$subscribedTo",
+        },
+        isSubscribed: {
+          $cond: {
+            if: { $in: [req.user?._id, "$subscribers.subscriber"] },
+            then: true,
+            else: false,
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        fullName: 1,
+        username: 1,
+        subscribersCount: 1,
+        channelsSubscribedToCount: 1,
+        isSubscribed: 1,
+        avatar: 1,
+        coverImage: 1,
+        email: 1,
+      }
+    }
+  ]);
+
+  //console.log(channel);
+
+  if(!channel?.length){
+    throw new ApiError(404, "Channel not found");
+  }
 
   return res
   .status(200)
-  .json(new ApiResponse(200, user, "Cover image updated successfully"));
-})
+  .json(
+    new ApiResponse(200, channel[0], "User Channel fetched successfully")
+  );
 
 
+});
 
-export { 
+export {
   registerUser,
-  loginUser, 
-  logoutUser, 
-  refreshAccessToken, 
+  loginUser,
+  logoutUser,
+  refreshAccessToken,
   changeCurrentPassword,
   getCurrentUser,
   updateAccountDetails,
   updateUserAvatar,
   updateUserCoverImage,
+  getUserChannelProfile,
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /*
 using $ we can use multiple operators.
